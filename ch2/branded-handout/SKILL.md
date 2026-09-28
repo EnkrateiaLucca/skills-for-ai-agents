@@ -27,12 +27,12 @@ Copy this checklist and check off each step:
 
 ### 2. Pick the handout type
 
-The rules in "Voice and style" below apply to every handout. Some handout types need extra rules. Read the matching file before you write:
+The rules in "Voice and style" below apply to every handout. Some handout types need extra rules, so read the matching file before you write:
 
 - Cheat sheet or reference card (default): nothing extra.
-- Workshop or course material (class, lesson, students, exercises): read `references/course-handouts.md`.
-- Handout meant to be shared online (LinkedIn, Instagram, "post this"): read `references/social-posts.md`.
-- Handout that teaches code, CLI tools, APIs, or AI workflows: read `references/technical-explanations.md`.
+- Workshop or course material: read `references/course-handouts.md`.
+- Handout to share online (LinkedIn, Instagram): read `references/social-posts.md`.
+- Handout that teaches code, tools, or AI workflows: read `references/technical-explanations.md`.
 
 If a request matches two types, read both files.
 
@@ -71,11 +71,7 @@ Save the content as `handout.json` in the working directory:
 
 ### 4. Render the PDF
 
-Run the generator on the file you wrote:
-
-`uv run scripts/create-handout.py handout.json --out handouts/`
-
-The script checks the JSON before rendering. If it reports a missing or invalid field, fix `handout.json` and run it again. Do not edit the script to get past an error.
+Run `uv run scripts/create-handout.py handout.json --out handouts/`. The script checks the JSON before rendering. If it reports a missing or invalid field, fix `handout.json` and run it again. Do not edit the script to get past an error.
 
 ### 5. Check the PDF and report
 
