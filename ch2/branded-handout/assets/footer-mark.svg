@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Automata Learning Lab — Professional Mark
+       Left hemisphere = mechanical (gear teeth + cog spokes)
+       Right hemisphere = creative (brain-fold curves, 4 accent colors) -->
+
+  <defs>
+    <clipPath id="leftHalf"><rect x="0" y="0" width="100" height="200"/></clipPath>
+    <clipPath id="rightHalf"><rect x="100" y="0" width="100" height="200"/></clipPath>
+    <clipPath id="circle"><circle cx="100" cy="100" r="78"/></clipPath>
+  </defs>
+
+  <!-- Outer ring -->
+  <circle cx="100" cy="100" r="78" fill="none" stroke="#000" stroke-width="5"/>
+
+  <!-- Vertical divider -->
+  <line x1="100" y1="22" x2="100" y2="178" stroke="#000" stroke-width="4"/>
+
+  <!-- LEFT: gear hemisphere -->
+  <g clip-path="url(#leftHalf)">
+    <!-- Proper gear silhouette: outer gear shape with rectangular teeth -->
+    <path d="M 100 22
+             L 100 30  L 88 30  L 86 38
+             A 70 70 0 0 0 60 49
+             L 51 43  L 43 51   L 49 60
+             A 70 70 0 0 0 38 86
+             L 30 88  L 30 112  L 38 114
+             A 70 70 0 0 0 49 140
+             L 43 149 L 51 157  L 60 151
+             A 70 70 0 0 0 86 162
+             L 88 170 L 100 170
+             L 100 22 Z"
+          fill="#F5F3EB" stroke="#000" stroke-width="4" stroke-linejoin="miter"/>
+
+    <!-- Inner cog -->
+    <g clip-path="url(#leftHalf)">
+      <circle cx="100" cy="100" r="32" fill="none" stroke="#000" stroke-width="3.5"/>
+      <!-- Spokes -->
+      <line x1="100" y1="68" x2="100" y2="80"  stroke="#000" stroke-width="3"/>
+      <line x1="100" y1="120" x2="100" y2="132" stroke="#000" stroke-width="3"/>
+      <line x1="68" y1="100" x2="80" y2="100"  stroke="#000" stroke-width="3"/>
+      <line x1="77" y1="77"  x2="85" y2="85"   stroke="#000" stroke-width="3"/>
+      <line x1="77" y1="123" x2="85" y2="115"  stroke="#000" stroke-width="3"/>
+      <!-- Hub -->
+      <circle cx="100" cy="100" r="7" fill="#000"/>
+    </g>
+  </g>
+
+  <!-- RIGHT: brain hemisphere — 4 fold-arcs in brand accents -->
+  <g clip-path="url(#rightHalf)">
+    <g clip-path="url(#circle)" fill="none" stroke-width="6" stroke-linecap="round">
+      <path d="M 100 38 Q 168 55 160 100" stroke="#E86B5A"/>
+      <path d="M 100 62 Q 150 75 142 110" stroke="#F5C542"/>
+      <path d="M 100 90 Q 140 105 128 135" stroke="#7CB56B"/>
+      <path d="M 100 120 Q 130 140 110 162" stroke="#5B9BD5"/>
+    </g>
+  </g>
+</svg>
