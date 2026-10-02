@@ -1,93 +1,322 @@
-## Chapter 5: The company-profile Skill
+## The transcript-to-timeline Skill (Chapter 5)
 
-Chapter 5 shows the workflow overview of the company-profile Skill and walks through a few of its steps. This section holds the complete SKILL.md. The Skill also ships two reference files, two scripts and a mock company database. The SKILL.md points to each one by path.
+Chapter 5 builds a Skill that picks the best moments from a long transcript and delivers an EDL for DaVinci Resolve. The chapter summarizes two parts of that Skill: the calibration brief with its log of approved picks, and the sub-agent prompt that processes the rest of the transcript. This section shows both in full. The complete SKILL.md is at the end of the section.
+
+### The Calibration Brief and the Picked-Excerpts Log
+
+The agent reads the first two chunks of the transcript, shows a provisional selection and waits for the editor to confirm it. This is the calibration round:
+
+````markdown
+### 4. Calibrate after two chunks
+
+Process chunks 1 and 2 only, show the provisional selection and ask whether the
+theme, tone, ratio and density are right. Continue only after confirmation. If
+the transcript contains fewer than two chunks, calibrate on everything read.
+````
+
+After the editor confirms, the agent writes two files. The file brief.md records what makes a good choice for this job. The file picked_so_far.txt records the excerpts the editor approved:
+
+````markdown
+### 4b. Long transcripts (more than 4 chunks): fan out after calibration
+
+Chunking limits how much arrives at once, not how much accumulates. Above
+4 chunks, do not read the remaining chunks yourself. Keep the transcript out
+of the coordinating context; it holds only the brief, one-line reports and
+the merged shortlist.
+
+1. After calibration, write `brief.md`: theme, funny/meaningful ratio, target
+   duration, excerpt count, the category tests from step 2 copied verbatim,
+   and the confirmed excerpts as worked examples.
+2. Create `picked_so_far.txt` containing the confirmed excerpts.
+````
+
+The brief carries the information each decision needs. The log carries the information that must survive between decisions. Every worker reads both files before it touches its chunk, so it skips ideas that are already covered.
+
+### The Sub-Agent Worker Prompt
+
+If there are more than four chunks, the main agent stops reading the transcript. It hands each remaining chunk to a fresh sub-agent:
+
+````markdown
+3. For each remaining chunk, launch a fresh subagent (Agent tool,
+   general-purpose) in waves of 5–10 chunks. Each worker gets only this:
+````
+
+Each worker receives only this prompt, with the transcript path, frame rate and chunk number filled in:
+
+````text
+Read brief.md and picked_so_far.txt. Then run
+python scripts/parse_transcript.py INPUT.txt --fps FPS --chunk N
+and select candidates from that chunk only, following the brief and the
+invariants (byte-exact substring of one line, complete thoughts, no
+splicing). Skip ideas already covered in picked_so_far.txt. Write the
+candidates, blank-line separated, verbatim, nothing else, to
+candidates/chunk_NN.txt. Run
+python scripts/verify_excerpts.py --source INPUT.txt --excerpts candidates/chunk_NN.txt
+and fix any fatal error. Reply with one line: "chunk N: K candidates".
+````
+
+Each worker replies with one line. The main agent's context holds the brief, the one-line reports and the merged shortlist. The transcript stays out of it. The main agent then updates the log between waves, merges the candidates and makes the final pass:
+
+````markdown
+4. Between waves, append the wave's candidate files to `picked_so_far.txt`.
+5. After the last wave, merge in chunk order and verify:
+
+   ```bash
+   cat candidates/chunk_*.txt | awk 'NF{print; blank=0; next} !blank{print; blank=1}' > merged.tmp.txt
+   python scripts/verify_excerpts.py --source INPUT.txt --excerpts merged.tmp.txt
+   ```
+
+6. Final pass on `merged.tmp.txt` only: remove repeated ideas (keep the
+   cleanest occurrence), cut to the target count and duration, write
+   `selection.tmp.txt`, verify again, show it to the user, then continue
+   with step 5.
+````
+
+### The Full transcript-to-timeline SKILL.md
+
+The scripts it calls live in the scripts folder of the Skill.
 
 ````markdown
 ---
-name: company-profile
-description: Generate a polished one-page company profile PDF (investment-bank style tear sheet) for any private or public company, researched from high-quality free sources and optionally enriched from a private SQL financials database the user provides. Use this skill whenever the user asks for a company profile, tear sheet, one-pager, target profile, company snapshot, due-diligence brief, "perfil de empresa", or wants company data (NIF, shareholders, directors, financials, business description) compiled into a document — even if they don't say "PDF" or "profile" explicitly. Especially strong for Portuguese companies (Racius, publicacoes.mj.pt, eInforma), but works for any country.
+name: transcript-to-timeline
+description: Selects the best excerpts from long transcripts, preserves the text verbatim so each line can be located, and delivers a CMX 3600 EDL timeline ready to import into DaVinci Resolve. Use when the user asks for extraction or selection of video clips that make up the best moments from documentary footage, interviews, podcasts or timecoded recordings.
 ---
 
-# Company Profile One-Pager
+# Verbatim transcription for DaVinci Resolve EDL
 
-Generate a confidential-memo-style company tear sheet: header with company name, website and logo; left column with business areas & location, photos, and shareholders; right column with a multi-year financial data table; branded footer.
+Select the strongest moments from a timecoded transcript and deliver a compact
+CMX 3600 EDL that assembles those source ranges as separate clips in DaVinci
+Resolve. The final deliverable is `.edl`; the verbatim excerpt file is an
+intermediate verification artefact unless the user also asks for it.
 
-## Workflow overview
+## Non-negotiable invariants
 
-1. **Identify and verify the company** — make sure you have the right entity before researching.
-2. **Check the private database** — if the user has a financials database (SQL dump or SQLite), pull the financial table from it first.
-3. **Research** — gather registry data, business description, people, and remaining financials from free sources.
-4. **Fill the JSON spec** — write a `profile.json` following `references/profile-schema.md`.
-5. **Generate the PDF** — run `scripts/generate_profile.py`.
-6. **Verify and report** — visually check the PDF, then tell the user what came from where and what's missing.
+1. Every selected excerpt must be byte-identical to a contiguous substring of
+   one transcript line. Never correct spelling, punctuation, accents or casing.
+2. Never cross a transcript-line boundary or splice fragments together.
+3. Keep excerpts and EDL events in chronological source order.
+4. Strong excerpts end on complete thoughts. Move boundaries to exclude filler and truncated
+   tails; never delete words inside an excerpt.
+5. The final EDL must contain one event per excerpt, compact record timecodes,
+   source timecodes within the video, and `* FROM CLIP NAME:` comments.
+6. Import the result as a normal timeline EDL. **Never instruct the user to use
+   Pre-conformed EDL** for a selective compact edit: that workflow is for
+   notching a flattened master and can produce one full-length clip instead.
 
-## Step 1 — Identify and verify
+## Workflow
 
-Companies share names constantly (there are dozens of "Transportes Silva Lda"). Before researching, establish the exact legal entity:
+### 0. Ask for editorial framing before reading the transcript
 
-- If the user gave a website, fetch it and extract the legal name, NIF/VAT number, and address (usually in the footer, "Contactos", privacy policy, or terms page).
-- If only a name was given, search for `"<name>" site:racius.com` or `"<name>" NIF` (Portugal) or `"<name>" company registration <country>` and cross-check the industry/location against any context the user gave.
-- If two or more plausible matches exist and you can ask the user, present the candidates (name, location, activity) and let them pick. If you cannot ask, choose the best match and state your identification reasoning prominently in your final report.
+Ask and wait for all four answers:
 
-## Step 2 — Check the private database
+```
+Before we start, I need four things:
 
-Private-company financials are rarely free online, so teams usually keep them in an internal database. If the user pointed you at one (a `.sql` dump or a SQLite file), or their message/context implies an internal data source exists, query it before doing any web research on financials:
+1. Theme/focus of the breakdown
+2. Balance between funny/irreverent and smart/meaningful
+3. Target duration for the final video
+4. Number of clips: exact count, a range, or no limit
 
-```bash
-python3 <skill_path>/scripts/query_financials.py <database> "<company name or NIF>"
+I use ~10 seconds per clip as a flexible guideline. Let me know if you prefer a different duration.
 ```
 
-The helper loads `.sql` dumps into in-memory SQLite, matches by NIF (exact) or name (substring), and prints a ready-to-paste `financials` block for `profile.json` — including the standard row order (Revenue → EBITDA → operational metrics → balance-sheet items) with bold flags and spacers. When the database also carries `description`/`portfolio` columns or `shareholders`/`management` tables, those come back too, ready for the corresponding profile.json sections. Use `--list` to browse entries, `--raw` for plain rows. If the user's database has a different schema than the bundled one (see `assets/mock_company_db.sql`), inspect it with `sqlite3` and adapt the query; still produce the same row structure.
+Also resolve the source video. Prefer an obvious matching video beside the
+transcript; otherwise ask the user for it. An EDL cannot be validated without
+the source filename, duration and frame rate.
 
-Precedence when sources conflict: **user's database > official filings > company statements > press**. Cite the database as the source in your report and in `units_note` (e.g. "€ thousands (company database)"). Database figures are still subject to the honesty rule — never pad missing years or columns.
+### 1. Probe the video and parse the transcript
 
-### Demo entities — don't mix fictional and real data
-
-If the company is found in the database but has no verifiable web presence (or the user says it's a demo), treat it as a **demo entity**: build the entire profile from the database — description, portfolio bullets, shareholders, management, financials — skip web research entirely, and state in your report that the profile is built from demo/fictional data. Mixing invented database figures with real web-researched facts about a real company produces a document that is wrong in both directions; keep each profile purely one or the other.
-
-`assets/mock_company_db.sql` is a 100-company fictional database bundled exactly for this: ids 4–100 (e.g. "Nortec Automation, Lda") are self-contained demo entities with full cap tables and descriptions. It also contains a few real company names carrying mock financials for pipeline testing — those deliberately have no shareholders/management rows, and their figures must never be presented as real.
-
-## Step 3 — Research
-
-Read `references/sources.md` for the per-field source guide (it has a detailed Portugal section — Racius, publicacoes.mj.pt, Portal da Empresa, eInforma — plus international equivalents). Collect:
-
-- **Registry**: legal name, NIF/registration number, legal form, HQ address, incorporation date
-- **Business**: what the company does, service/product portfolio, sectors served (from company website, LinkedIn)
-- **People**: management/directors; shareholders with percentages when discoverable
-- **Size**: employee count (LinkedIn range, registry bands)
-- **Financials**: revenue, EBITDA, employees, debt, equity — whatever free sources actually publish
-
-Run searches in parallel where possible. Prefer primary/official sources (official gazettes, registries, the company's own site) over aggregators; when aggregators disagree, note the discrepancy.
-
-### The honesty rule for financials
-
-This document looks authoritative — a fabricated number in it is worse than a blank. Never invent, extrapolate, or "estimate" financial figures. Every number in the table must trace to a source or to the user.
-
-- Free sources often publish only fragments (one year of revenue, an employee band). Use what exists; put `n/a` in cells you can't source.
-- If a figure is a stated estimate from a source, append `E` (e.g., `~4,850E`) and say so in your report.
-- If financial coverage is too thin to make a useful table and no private database was provided (Step 2), ask the user for one — a `.sql`/SQLite file, pasted figures, or an export from SABI, Informa D&B, or Orbis — offering the exact row/year structure you need. If you cannot ask, generate the profile with `n/a` cells and clearly list what's missing.
-- Percentages and ratios (growth, margins, NFD/EBITDA) may be *computed* from sourced figures — that's arithmetic, not invention.
-
-## Step 4 — Fill the JSON spec
-
-Write `profile.json` following `references/profile-schema.md` (read it — the schema doc includes a complete worked example). Notes:
-
-- Keep business bullets to 3–4, each 1–3 lines, written in crisp banker prose ("Company specialized in…", "Comprehensive service portfolio, including (i)…, (ii)…").
-- Financial values: pass numbers as numbers (the script formats thousands separators and renders negatives in parentheses); pass percentages/ratios as strings (`"15%"`, `"2.3x"`).
-- Order the table like the reference layout: Revenue → COGS → Gross Margin → opex lines → EBITDA, then spacer, then operational metrics (Exports, Employees), then spacer, then balance-sheet items (Fixed Assets, Net Financial Debt, Equity). Bold the key rows. Omit rows you have no data for rather than filling a column of n/a — a shorter honest table beats a long empty one.
-- Logo: if you found a clean logo image, download it and set `logo.path`. Otherwise leave it null — the script draws a placeholder monogram logo (or pick a pre-made one from `assets/logos/`). Same for photos: labeled gradient placeholder boxes are the default and are perfectly presentable. Many environments block binary image downloads — in that case don't burn time retrying; instead make the placeholders company-specific: derive the three photo labels from what the company actually does (e.g. a fruit-prep group gets "PHOTO: FRUIT PROCESSING LINE" / "PHOTO: R&D LAB" / "PHOTO: MAIA HQ", not generic labels), and pick the monogram shape that best matches the sector.
-
-## Step 5 — Generate
+Use `ffprobe` to obtain the video frame rate and duration. Then parse using that
+frame rate:
 
 ```bash
-python3 <skill_path>/scripts/generate_profile.py profile.json output.pdf
+python scripts/parse_transcript.py INPUT.txt --fps FPS --out parsed.json --summary
 ```
 
-Requires `reportlab` (and `Pillow` only if embedding images). The script warns on stderr if content overflows the page — if it does, trim bullets or table rows and rerun.
+Report line count, word count, duration and chunk count. Read one ~3000-word
+chunk at a time; never load an 8–10 hour transcript all at once.
 
-## Step 6 — Verify and report
+```bash
+python scripts/parse_transcript.py INPUT.txt --fps FPS --chunk 1
+```
 
-Convert the first page to an image (`pdftoppm -png -r 80 output.pdf check`) and look at it, or Read the PDF. Check: no overlapping text, table aligned, footer correct.
+### 2. Clip Selection
 
-Then give the user a short sourcing report: which source each major data point came from (with links), what's `n/a` and why, any identity-verification caveats, and — if financials are thin — the offer to regenerate with user-provided numbers. Remind them that photos/logos scraped from the web are fine for internal mockups but need licensing review before external publication.
+Mix these categories to the requested ratio. An excerpt enters a category when it meets at least some of the criteria below. When unsure whether it passes, it fails.
+
+**Funny/irreverent**
+- Setup and payoff are both inside the cut. A punchline that needs an earlier
+  story fails.
+- It reads funny on the page. You see text only; skip a funny moment if it depends on you knowing exactly when a visual like a face or picture is shown on screen. 
+- It is specific: a concrete image, name or number, never a general joke about
+  the topic.
+- It has an edge. The speaker says something they would keep out of a press
+  release: a blunt opinion, self-mockery, an absurd comparison.
+- It ends on the hit. Cut before the speaker explains the joke.
+
+**Intelligent/meaningful**
+- It makes a claim someone could disagree with. A summary of the topic fails.
+- It stands alone. A viewer who saw nothing else understands it. An opening
+  "that", "this" or "like I said" pointing at missing context fails.
+- It is quotable: one tight formulation, not an idea spread over a ramble with
+  restarts.
+- It is earned. It comes from the speaker's experience, a concrete example or
+  a surprising consequence, never a platitude anyone could say.
+
+
+Prefer a few genuinely strong excerpts over many competent ones. Deduplicate
+repeated ideas and keep the occurrence with the cleanest boundaries.
+
+For a sub-line excerpt, duration is initially proportional to its position and
+length in the transcript line. The EDL generator later snaps its start and end
+to nearby real pauses in the audio. A whole-line excerpt uses exact line
+timecodes.
+
+### 3. Create and verify the intermediate verbatim selection
+
+Write a temporary `.txt` containing excerpts only, separated by blank lines:
+
+- no timecodes, speakers, numbering, headings, categories or commentary;
+- source language, spelling and punctuation untouched.
+
+Always verify before calibration or EDL generation:
+
+```bash
+python scripts/verify_excerpts.py --source INPUT.txt --excerpts selection.tmp.txt
+```
+
+On a fatal error, stop, report it, fix the selection and rerun. Never silently
+drop a failing excerpt.
+
+If the verifier reports inseparable filler, show the affected excerpts in chat
+and ask whether to keep or remove them before proceeding.
+
+### 4. Calibrate after two chunks
+
+Process chunks 1 and 2 only, show the provisional selection and ask whether the
+theme, tone, ratio and density are right. Continue only after confirmation. If
+the transcript contains fewer than two chunks, calibrate on everything read.
+
+### 4b. Long transcripts (more than 4 chunks): fan out after calibration
+
+Chunking limits how much arrives at once, not how much accumulates. Above
+4 chunks, do not read the remaining chunks yourself. Keep the transcript out
+of the coordinating context; it holds only the brief, one-line reports and
+the merged shortlist.
+
+1. After calibration, write `brief.md`: theme, funny/meaningful ratio, target
+   duration, excerpt count, the category tests from step 2 copied verbatim,
+   and the confirmed excerpts as worked examples.
+2. Create `picked_so_far.txt` containing the confirmed excerpts.
+3. For each remaining chunk, launch a fresh subagent (Agent tool,
+   general-purpose) in waves of 5–10 chunks. Each worker gets only this:
+
+   ```
+   Read brief.md and picked_so_far.txt. Then run
+   python scripts/parse_transcript.py INPUT.txt --fps FPS --chunk N
+   and select candidates from that chunk only, following the brief and the
+   invariants (byte-exact substring of one line, complete thoughts, no
+   splicing). Skip ideas already covered in picked_so_far.txt. Write the
+   candidates, blank-line separated, verbatim, nothing else, to
+   candidates/chunk_NN.txt. Run
+   python scripts/verify_excerpts.py --source INPUT.txt --excerpts candidates/chunk_NN.txt
+   and fix any fatal error. Reply with one line: "chunk N: K candidates".
+   ```
+
+4. Between waves, append the wave's candidate files to `picked_so_far.txt`.
+5. After the last wave, merge in chunk order and verify:
+
+   ```bash
+   cat candidates/chunk_*.txt | awk 'NF{print; blank=0; next} !blank{print; blank=1}' > merged.tmp.txt
+   python scripts/verify_excerpts.py --source INPUT.txt --excerpts merged.tmp.txt
+   ```
+
+6. Final pass on `merged.tmp.txt` only: remove repeated ideas (keep the
+   cleanest occurrence), cut to the target count and duration, write
+   `selection.tmp.txt`, verify again, show it to the user, then continue
+   with step 5.
+
+### 5. Generate the final EDL
+
+After the selection is confirmed and the complete transcript has been
+processed, run:
+
+```bash
+python scripts/make_edl.py \
+  --excerpts selection.tmp.txt \
+  --transcript INPUT.txt \
+  --video SOURCE_VIDEO.mp4 \
+  --out OUTPUT.edl
+```
+
+`make_edl.py` detects the frame rate with `ffprobe`, locates every exact excerpt
+in the transcript, estimates sub-line boundaries, and snaps them to nearby
+pauses detected in the source video's audio. If the project has one rendered
+WAV per transcript line (`0000.wav`, `0001.wav`, ...), pass `--audio-dir` for
+the cleanest pause detection.
+
+The generated EDL must use:
+
+- CMX 3600 event lines;
+- `FCM: NON-DROP FRAME` unless the user explicitly requires drop-frame;
+- combined `AA/V` events so video and linked stereo audio are retained;
+- source in/out from the original video;
+- compact, contiguous record in/out beginning at `00:00:00:00`;
+- the actual source filename in every `* FROM CLIP NAME:` comment.
+
+The script must fail rather than emit an EDL when an excerpt is missing or
+ambiguous, an event is empty/outside the media, the frame rate is unsupported,
+or the record timeline is discontinuous.
+
+### 6. Validate and deliver
+
+Before delivery, confirm:
+
+- EDL event count equals excerpt count;
+- source ranges are ordered and within the video duration;
+- every source out is after source in;
+- record ranges are gapless and start at zero;
+- final record out matches the reported total duration;
+- `FCM`, channel and clip-name comments are present.
+
+Deliver the `.edl` as the primary output. Keep the `.txt` as an internal or
+optional companion unless the user requests it.
+
+Give these Resolve import instructions:
+
+1. Set the project/timeline frame rate to the EDL frame rate before importing.
+2. Add the referenced source video to the Media Pool.
+3. Choose **File → Import → Timeline** and select the `.edl`.
+4. In Load EDL, choose the detected frame rate and leave drop-frame disabled
+   when the file says `FCM: NON-DROP FRAME`.
+5. Do **not** choose **Pre-conformed EDL**.
+
+The expected result is one compact timeline containing one separate video/audio
+clip per selected excerpt.
+
+## Common failures
+
+| Symptom | Cause / correction |
+|---|---|
+| One full-length clip appears | Imported as Pre-conformed EDL; reimport with File → Import → Timeline |
+| Clips are offline | Add the exact source file to the Media Pool and match `* FROM CLIP NAME:` |
+| Cuts drift | Wrong project/EDL frame rate or drop-frame setting |
+| Words are clipped | Pause snap was wrong; inspect audio boundary and regenerate |
+| EDL has the right cuts but no audio | Ensure events use `AA/V` and the source clip has linked audio |
+| Resolve finds no excerpt | The intermediate text was changed; restore the byte-exact source substring |
+
+## Language
+
+- Questions, progress, warnings and import instructions: English.
+- Excerpts: source language, byte-identical, never translated.
+
+## Scripts
+
+- `scripts/parse_transcript.py` — parse and chunk timecoded transcripts.
+- `scripts/verify_excerpts.py` — verify exact matching, boundaries, order and
+  duplicates before EDL generation.
+- `scripts/make_edl.py` — generate and validate the final compact CMX 3600 EDL.
+
+All scripts use Python 3. `make_edl.py` additionally requires `ffmpeg` and
+`ffprobe` on `PATH`.
 ````

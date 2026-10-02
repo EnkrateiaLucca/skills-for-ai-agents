@@ -1,9 +1,9 @@
 ---
 name: transcript-to-timeline
-description: Seleciona os melhores trechos de transcrições longas, preserva o texto verbatim para localizar cada fala e entrega uma timeline CMX 3600 EDL pronta para importar no DaVinci Resolve. Use para decupagem, “best of”, seleção de clipes ou melhores momentos de entrevistas, podcasts e gravações com timecodes, especialmente quando o utilizador quer cortar automaticamente o vídeo no Resolve.
+description: Selects the best excerpts from long transcripts, preserves the text verbatim so each line can be located, and delivers a CMX 3600 EDL timeline ready to import into DaVinci Resolve. Use when the user asks for extraction or selection of video clips that make up the best moments from documentary footage, interviews, podcasts or timecoded recordings.
 ---
 
-# Decupagem verbatim para DaVinci Resolve EDL
+# Verbatim transcription for DaVinci Resolve EDL
 
 Select the strongest moments from a timecoded transcript and deliver a compact
 CMX 3600 EDL that assembles those source ranges as separate clips in DaVinci
@@ -28,17 +28,17 @@ intermediate verification artefact unless the user also asks for it.
 
 ### 0. Ask for editorial framing before reading the transcript
 
-Ask in Portuguese and wait for all four answers:
+Ask and wait for all four answers:
 
 ```
-Antes de começar, preciso de quatro coisas:
+Before we start, I need four things:
 
-1. Tema/foco da decupagem
-2. Proporção de engraçado/irreverente vs. inteligente/significativo
-3. Duração-alvo do vídeo final
-4. Número de trechos: exato, intervalo ou sem limite
+1. Theme/focus of the breakdown
+2. Balance between funny/irreverent and smart/meaningful
+3. Target duration for the final video
+4. Number of clips: exact count, a range, or no limit
 
-Uso ~10s por trecho como referência flexível. Diz-me se preferes outro valor.
+I use ~10 seconds per clip as a flexible guideline. Let me know if you prefer a different duration.
 ```
 
 Also resolve the source video. Prefer an obvious matching video beside the
@@ -63,8 +63,7 @@ python scripts/parse_transcript.py INPUT.txt --fps FPS --chunk 1
 
 ### 2. Clip Selection
 
-Mix these categories to the requested ratio. An excerpt enters a category only
-if it passes every test under it. When unsure whether it passes, it fails.
+Mix these categories to the requested ratio. An excerpt enters a category when it meets at least some of the criteria below. When unsure whether it passes, it fails.
 
 **Funny/irreverent**
 - Setup and payoff are both inside the cut. A punchline that needs an earlier
@@ -229,7 +228,7 @@ clip per selected excerpt.
 
 ## Language
 
-- Questions, progress, warnings and import instructions: Portuguese.
+- Questions, progress, warnings and import instructions: English.
 - Excerpts: source language, byte-identical, never translated.
 
 ## Scripts
